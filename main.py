@@ -1,3 +1,19 @@
+# ===== HTTP 伺服器（保持 Replit 喚醒）=====
+from flask import Flask
+import threading
+
+app = Flask("")
+
+@app.route("/")
+def home():
+    return "✅ hk-shek-fook-bot is running!"
+
+def run_flask():
+    app.run(host="0.0.0.0", port=8080)
+
+threading.Thread(target=run_flask).start()
+# ===== HTTP 伺服器結束 =====
+
 import discord
 import os
 from discord.ui import Button, View
@@ -6,12 +22,6 @@ from collections import defaultdict
 DISCORD_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 
 allowed_channels = set()
-# active_games 結構升級：
-# channel_id → {
-#   "answer", "starter_id", "domain", "hints",
-#   "message_count": int,   # 新訊息計數
-#   "resend_threshold": 10  # 每 10 條重發
-# }
 active_games = {}
 scores = defaultdict(int)
 
@@ -23,7 +33,7 @@ def red_embed(desc: str) -> discord.Embed:
     return discord.Embed(description=desc, color=0xff0000)
 
 class HintView(View):
-    def __init__(self, starter_id: int, hints: list, *, timeout=1800):  # 延長至 30 分鐘
+    def __init__(self, starter_id: int, hints: list, *, timeout=1800):
         super().__init__(timeout=timeout)
         self.starter_id = starter_id
         self.hints = hints
@@ -86,7 +96,7 @@ async def on_message(message):
     channel_id = message.channel.id
     content = message.content.strip()
 
-    # === 喚醒 ===
+    # === 喚醒頻道 ===
     if content == "@射你老母":
         allowed_channels.add(channel_id)
         await message.channel.send(embed=red_embed("🧟 Bot 已喚醒！請在本頻道出題。"))
@@ -95,11 +105,11 @@ async def on_message(message):
     if channel_id not in allowed_channels:
         return
 
-    # === @stop 結束遊戲 ===
+    # === @stop 強制結束 ===
     if content == "@stop":
         if channel_id in active_games:
-            ans = active_genes[channel_id]["answer"]
-            del active_genes[channel_id]
+            ans = active_games[channel_id]["answer"]
+            del active_games[channel_id]
             await message.channel.send(embed=red_embed(f"⏹️ 遊戲已結束！答案係 **{ans}**。"))
         else:
             await message.channel.send(embed=red_embed("❌ 無進行中遊戲。"))
@@ -107,7 +117,8 @@ async def on_message(message):
 
     # === @mark 查分 ===
     if content == "@mark":
-        await message.channel.send(embed=red_embed(f"你有 {scores[message.author.id]} 分。"))
+        pts = scores[message.author.id]
+        await message.channel.send(embed=red_embed(f"你有 {pts} 分。"))
         return
 
     # === 出題 ===
@@ -133,8 +144,8 @@ async def on_message(message):
                     "starter_id": message.author.id,
                     "domain": domain,
                     "hints": [h1, h2, h3],
-                    "message_count": 0,      # 初始化計數
-                    "resend_threshold": 10   # 每 10 訊息重發
+                    "message_count": 0,
+                    "resend_threshold": 10
                 }
 
                 try:
@@ -159,7 +170,7 @@ async def on_message(message):
                 pass
         return
 
-    # === 答題判定 ===
+    # === 答題 & 自動重發 ===
     if channel_id in active_games:
         game = active_games[channel_id]
         if content == game["answer"]:
@@ -170,10 +181,10 @@ async def on_message(message):
             del active_games[channel_id]
             return
 
-        # === 自動重發按鈕邏輯 ===
+        # 每 10 條訊息重發
         game["message_count"] += 1
         if game["message_count"] >= game["resend_threshold"]:
-            game["message_count"] = 0  # 重置計數
+            game["message_count"] = 0
             view = HintView(starter_id=game["starter_id"], hints=game["hints"])
             await message.channel.send(
                 embed=red_embed(f"🔁 謎題重發（每 {game['resend_threshold']} 訊息）\n🧠 關於「{game['domain']}」的謎題！大家繼續猜～"),
@@ -181,9 +192,9 @@ async def on_message(message):
             )
         return
 
-# === 啟動 ===
+# === 啟動 Bot ===
 if __name__ == "__main__":
     if not DISCORD_TOKEN:
-        print("❌ 請設定 DISCORD_BOT_TOKEN")
+        print("❌ 請設定 Secrets: DISCORD_BOT_TOKEN")
     else:
         bot.run(DISCORD_TOKEN)
