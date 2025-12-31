@@ -29,32 +29,32 @@ class HintView(View):
         return True
 
     @discord.ui.button(label="接近了", style=discord.ButtonStyle.blurple)
-    async def close_enough(self, interaction: discord.Interaction):
+    async def close_enough(self, interaction: discord.Interaction, button):
         await interaction.response.defer()
         await interaction.channel.send(embed=red_embed("接近了"))
 
     @discord.ui.button(label="沒有關係", style=discord.ButtonStyle.red)
-    async def not_related(self, interaction: discord.Interaction):
+    async def not_related(self, interaction: discord.Interaction, button):
         await interaction.response.defer()
         await interaction.channel.send(embed=red_embed("沒有關係～"))
 
     @discord.ui.button(label="再猜猜", style=discord.ButtonStyle.green)
-    async def guess_again(self, interaction: discord.Interaction):
+    async def guess_again(self, interaction: discord.Interaction, button):
         await interaction.response.defer()
         await interaction.channel.send(embed=red_embed("再猜猜！"))
 
     @discord.ui.button(label="提示一", style=discord.ButtonStyle.grey)
-    async def hint1(self, interaction: discord.Interaction):
+    async def hint1(self, interaction: discord.Interaction, button):
         await interaction.response.defer()
         await interaction.channel.send(embed=red_embed(f"提示係 {self.hints[0]}"))
 
     @discord.ui.button(label="提示二", style=discord.ButtonStyle.grey)
-    async def hint2(self, interaction: discord.Interaction):
+    async def hint2(self, interaction: discord.Interaction, button):
         await interaction.response.defer()
         await interaction.channel.send(embed=red_embed(f"提示係 {self.hints[1]}"))
 
     @discord.ui.button(label="提示三", style=discord.ButtonStyle.grey)
-    async def hint3(self, interaction: discord.Interaction):
+    async def hint3(self, interaction: discord.Interaction, button):
         await interaction.response.defer()
         await interaction.channel.send(embed=red_embed(f"提示係 {self.hints[2]}"))
 
@@ -67,77 +67,121 @@ async def on_message(message):
     if message.author == bot.user:
         return
 
-    channel_id = message.channel.id
     content = message.content.strip()
 
-    # === 喚醒指令（公開）===
-    if content == "@射你老母":
-        allowed_channels.add(channel_id)
-        await message.channel.send(embed=red_embed("🧟 Bot 已喚醒！喺呢個頻道可以開始遊戲啦～"))
-        return
+    # === 1. 在文字頻道中 ===
+    if isinstance(message.channel, discord.TextChannel):
+        # 喚醒指令
+        if content == "@射你老母":
+            allowed_channels.add(message.channel.id)
+            await message.channel.send(embed=red_embed("🧟 Bot 已喚醒！可用 DM 出題或在此頻道出題。"))
+            return
 
-    if channel_id not in allowed_channels:
-        return
+        # 檢查頻道是否允許
+        if message.channel.id not in allowed_channels:
+            return
 
-    # === 查分（公開紅色）===
-    if content == "@mark":
-        pts = scores[message.author.id]
-        await message.channel.send(embed=red_embed(f"你有 {pts} 分。"))
-        return
+        # 查分
+        if content == "@mark":
+            pts = scores[message.author.id]
+            await message.channel.send(embed=red_embed(f"你有 {pts} 分。"))
+            return
 
-    # === 出題指令（隱藏原始訊息）===
-    if content.startswith("@ANS "):
-        parts = content[5:].split(",", 4)
-        if len(parts) == 5:
-            answer, domain, h1, h2, h3 = [p.strip() for p in parts]
-            if not all([answer, domain, h1, h2, h3]):
-                await message.author.send(embed=red_embed("⚠️ 每部分都唔可以留空！"))
-                return
-
-            # 檢查是否已在進行遊戲
-            if channel_id in active_games:
-                await message.author.send(embed=red_embed("⚠️ 呢個頻道有遊戲進行中，請等完先！"))
-                return
-
-            active_games[channel_id] = {
-                "answer": answer,
-                "starter_id": message.author.id,
-                "domain": domain,
-                "hints": [h1, h2, h3]
-            }
-
-            # 隱藏確認（只有出題者見）
-            await message.author.send(embed=red_embed(f"✅ 謎題已設定！答案：{answer}"))
-
-            # 公開謎題（所有人見）
-            view = HintView(starter_id=message.author.id, hints=[h1, h2, h3])
-            await message.channel.send(
-                embed=red_embed(f"🧠 關於「{domain}」的謎題已開始！大家快猜答案～"),
-                view=view
-            )
-        else:
-            await message.author.send(
-                embed=red_embed(
-                    "⚠️ 格式錯誤！請用：\n"
-                    "`@ANS 答案,相關領域,提示一,提示二,提示三`\n"
-                    "（用英文逗號分隔，共 5 個部分，無需引號）"
+        # 頻道內出題
+        if content.startswith("@ANS "):
+            parts = content[5:].split(",", 4)
+            if len(parts) == 5:
+                answer, domain, h1, h2, h3 = [p.strip() for p in parts]
+                if all([answer, domain, h1, h2, h3]):
+                    if message.channel.id in active_games:
+                        await message.author.send(embed=red_embed("⚠️ 該頻道已有遊戲進行中！"))
+                        return
+                    active_games[message.channel.id] = {
+                        "answer": answer,
+                        "starter_id": message.author.id,
+                        "domain": domain,
+                        "hints": [h1, h2, h3]
+                    }
+                    await message.author.send(embed=red_embed(f"✅ 謎題已設定！答案：{answer}"))
+                    view = HintView(starter_id=message.author.id, hints=[h1, h2, h3])
+                    await message.channel.send(
+                        embed=red_embed(f"🧠 關於「{domain}」的謎題已開始！大家快猜～"),
+                        view=view
+                    )
+                else:
+                    await message.author.send(embed=red_embed("⚠️ 每部分都唔可以留空！"))
+            else:
+                await message.author.send(
+                    embed=red_embed("⚠️ 格式錯誤！請用：\n`@ANS 答案,相關領域,提示一,提示二,提示三`")
                 )
-            )
-        return
+            return
 
-    # === 答對判定（公開）===
-    if channel_id in active_games:
-        game = active_games[channel_id]
-        if content == game["answer"]:
-            scores[message.author.id] += 1
-            await message.channel.send(
-                embed=red_embed(f"🎉 恭喜 {message.author.mention} 答對！答案係 **{game['answer']}**！")
-            )
-            del active_games[channel_id]
+        # 答題判定
+        if message.channel.id in active_games:
+            game = active_games[message.channel.id]
+            if content == game["answer"]:
+                scores[message.author.id] += 1
+                await message.channel.send(
+                    embed=red_embed(f"🎉 恭喜 {message.author.mention} 答對！答案係 **{game['answer']}**！")
+                )
+                del active_games[message.channel.id]
+            return
+
+    # === 2. 在私訊（DM）中出題 ===
+    if isinstance(message.channel, discord.DMChannel):
+        if content.startswith("@ANS "):
+            parts = content[5:].split(",", 5)
+            if len(parts) == 6:
+                try:
+                    channel_id = int(parts[0].strip())
+                    answer, domain, h1, h2, h3 = [p.strip() for p in parts[1:]]
+                except ValueError:
+                    await message.author.send(embed=red_embed("⚠️ 頻道 ID 必須係數字！"))
+                    return
+
+                if channel_id not in allowed_channels:
+                    await message.author.send(embed=red_embed("⚠️ 該頻道未被喚醒！請先在頻道打 `@射你老母`。"))
+                    return
+
+                if not all([answer, domain, h1, h2, h3]):
+                    await message.author.send(embed=red_embed("⚠️ 每部分都唔可以留空！"))
+                    return
+
+                if channel_id in active_games:
+                    await message.author.send(embed=red_embed("⚠️ 該頻道已有遊戲進行中！"))
+                    return
+
+                active_games[channel_id] = {
+                    "answer": answer,
+                    "starter_id": message.author.id,
+                    "domain": domain,
+                    "hints": [h1, h2, h3]
+                }
+
+                channel = bot.get_channel(channel_id)
+                if channel:
+                    view = HintView(starter_id=message.author.id, hints=[h1, h2, h3])
+                    await channel.send(
+                        embed=red_embed(f"🧠 關於「{domain}」的謎題已開始！大家快猜～"),
+                        view=view
+                    )
+                    await message.author.send(embed=red_embed(f"✅ 謎題已發佈到頻道！答案：{answer}"))
+                else:
+                    await message.author.send(embed=red_embed("❌ 找唔到指定頻道！請檢查 ID。"))
+            else:
+                await message.author.send(
+                    embed=red_embed(
+                        "💡 DM 出題格式：\n"
+                        "`@ANS 頻道ID,答案,相關領域,提示一,提示二,提示三`\n"
+                        "（例如：@ANS 123456789012345678,港珠澳大橋,基建,連接三地,世界最長跨海橋,2018年通車）"
+                    )
+                )
+        else:
+            await message.author.send(embed=red_embed("❌ 私訊只支援出題指令 `@ANS ...`"))
 
 # === 啟動 ===
 if __name__ == "__main__":
     if not DISCORD_TOKEN:
-        print("❌ 請設定 DISCORD_BOT_TOKEN")
+        print("❌ 請設定環境變數 DISCORD_BOT_TOKEN")
     else:
         bot.run(DISCORD_TOKEN)
