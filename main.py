@@ -2,12 +2,19 @@ import discord
 import os
 import re
 from discord.ui import Button, View
+from collections import defaultdict
 
 # === 設定 ===
 DISCORD_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 
+# 白名單：只在這些頻道回應
+allowed_channels = set()  # 存 channel.id
+
 # 活動遊戲：channel_id → { "answer": str, "starter_id": int, "hints": [str, str, str], "domain": str }
 active_games = {}
+
+# 分數：user_id → int
+scores = defaultdict(int)
 
 # === Bot 設定 ===
 intents = discord.Intents.default()
@@ -21,7 +28,6 @@ class HintView(View):
         self.hints = hints
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        # 只允許出題者點按鈕
         if interaction.user.id != self.starter_id:
             await interaction.response.send_message("❌ 嘸係你出題，唔可以用呢啲按鈕！", ephemeral=True)
             return False
@@ -61,24 +67,39 @@ async def on_message(message):
     if message.author == bot.user:
         return
 
+    channel_id = message.channel.id
+    user_id = message.author.id
     content = message.content.strip()
 
-    # 檢查是否符合 @ANS 格式
-    # 支援：@ANS "答案", "領域", "提示1", "提示2", "提示3"
+    # === 喚醒指令：@射你老母 ===
+    if content == "@射你老母":
+        allowed_channels.add(channel_id)
+        await message.channel.send("🧟 Bot 已喚醒！喺呢個頻道可以開始遊戲啦～")
+        return
+
+    # 若頻道未被喚醒，忽略所有其他指令
+    if channel_id not in allowed_channels:
+        return
+
+    # === 分數查詢：@mark ===
+    if content == "@mark":
+        pts = scores[user_id]
+        await message.channel.send(f"你有 {pts} 分。")
+        return
+
+    # === 出題：@ANS ... ===
     if content.startswith("@ANS "):
         rest = content[5:].strip()
-        # 使用正則拆分引號內容（支援中英文引號）
         matches = re.findall(r'["“”](.*?)["“”]', rest)
         if len(matches) == 5:
             answer, domain, h1, h2, h3 = matches
-            active_games[message.channel.id] = {
+            active_games[channel_id] = {
                 "answer": answer,
-                "starter_id": message.author.id,
+                "starter_id": user_id,
                 "domain": domain,
                 "hints": [h1, h2, h3]
             }
-
-            view = HintView(starter_id=message.author.id, hints=[h1, h2, h3])
+            view = HintView(starter_id=user_id, hints=[h1, h2, h3])
             await message.channel.send(
                 f"🧠 關於「{domain}」的謎題已開始！大家快猜答案～",
                 view=view
@@ -86,23 +107,19 @@ async def on_message(message):
         else:
             await message.channel.send(
                 "⚠️ 格式錯誤！請用：\n"
-                "`@ANS \"答案\", \"相關領域\", \"提示一\", \"提示二\", \"提示三\"`\n"
-                "例如：`@ANS \"港珠澳大橋\", \"基建\", \"連接三地\", \"世界最長跨海橋\", \"2018年通車\"`"
+                "`@ANS \"答案\", \"相關領域\", \"提示一\", \"提示二\", \"提示三\"`"
             )
         return
 
-    # 檢查是否有人答對
-    channel_id = message.channel.id
+    # === 答對判定 ===
     if channel_id in active_games:
         game = active_games[channel_id]
-        if message.content.strip() == game["answer"]:
-            # 答對！
+        if content == game["answer"]:
+            scores[user_id] += 1
             await message.channel.send(
                 f"🎉 恭喜 {message.author.mention} 答對！答案係 **{game['answer']}**！"
             )
-            # 移除遊戲（按鈕自動失效）
-            del active_games[channel_id]
-        # （可選）答錯不回應，避免刷屏
+            del active_games[channel_id]  # 結束遊戲
 
 # === 啟動 ===
 if __name__ == "__main__":
