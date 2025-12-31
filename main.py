@@ -4,6 +4,17 @@ sys.modules['discord.voice_client'] = type(sys)('discord.voice_client')
 sys.modules['discord.player'] = type(sys)('discord.player')
 # ===== 禁用完成 =====
 
+# 建立假的 voice_client 模組
+fake_voice_client = ModuleType('discord.voice_client')
+fake_voice_client.VoiceClient = None
+fake_voice_client.VoiceProtocol = None
+sys.modules['discord.voice_client'] = fake_voice_client
+
+# 建立假的 player 模組（可選，但建議）
+fake_player = ModuleType('discord.player')
+sys.modules['discord.player'] = fake_player
+# ===== 禁用完成 =====
+
 import discord
 import os
 from discord.ui import Button, View
