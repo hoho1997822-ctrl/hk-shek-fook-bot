@@ -6,6 +6,12 @@ from collections import defaultdict
 DISCORD_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 
 allowed_channels = set()
+# active_games 結構升級：
+# channel_id → {
+#   "answer", "starter_id", "domain", "hints",
+#   "message_count": int,   # 新訊息計數
+#   "resend_threshold": 10  # 每 10 條重發
+# }
 active_games = {}
 scores = defaultdict(int)
 
@@ -17,7 +23,7 @@ def red_embed(desc: str) -> discord.Embed:
     return discord.Embed(description=desc, color=0xff0000)
 
 class HintView(View):
-    def __init__(self, starter_id: int, hints: list, *, timeout=600):
+    def __init__(self, starter_id: int, hints: list, *, timeout=1800):  # 延長至 30 分鐘
         super().__init__(timeout=timeout)
         self.starter_id = starter_id
         self.hints = hints
@@ -80,7 +86,7 @@ async def on_message(message):
     channel_id = message.channel.id
     content = message.content.strip()
 
-    # === 喚醒指令 ===
+    # === 喚醒 ===
     if content == "@射你老母":
         allowed_channels.add(channel_id)
         await message.channel.send(embed=red_embed("🧟 Bot 已喚醒！請在本頻道出題。"))
@@ -89,30 +95,26 @@ async def on_message(message):
     if channel_id not in allowed_channels:
         return
 
-    # === 強制結束遊戲 ===
+    # === @stop 結束遊戲 ===
     if content == "@stop":
         if channel_id in active_games:
-            game = active_games[channel_id]
-            ans = game["answer"]
-            del active_games[channel_id]
-            await message.channel.send(embed=red_embed(f"⏹️ 遊戲已被強制結束！答案係 **{ans}**。"))
+            ans = active_genes[channel_id]["answer"]
+            del active_genes[channel_id]
+            await message.channel.send(embed=red_embed(f"⏹️ 遊戲已結束！答案係 **{ans}**。"))
         else:
             await message.channel.send(embed=red_embed("❌ 無進行中遊戲。"))
         return
 
-    # === 查分 ===
+    # === @mark 查分 ===
     if content == "@mark":
-        pts = scores[message.author.id]
-        await message.channel.send(embed=red_embed(f"你有 {pts} 分。"))
+        await message.channel.send(embed=red_embed(f"你有 {scores[message.author.id]} 分。"))
         return
 
     # === 出題 ===
     if content.startswith("@ANS "):
-        # 刪除原始訊息（需權限）
         try:
             await message.delete()
-        except discord.Forbidden:
-            # 若無「管理訊息」權限，則不刪除（但會提示）
+        except:
             pass
 
         parts = content[5:].split(",", 4)
@@ -120,35 +122,41 @@ async def on_message(message):
             answer, domain, h1, h2, h3 = [p.strip() for p in parts]
             if all([answer, domain, h1, h2, h3]):
                 if channel_id in active_games:
-                    await message.author.send(embed=red_embed("⚠️ 該頻道已有遊戲進行中！"))
+                    try:
+                        await message.author.send(embed=red_embed("⚠️ 該頻道已有遊戲進行中！"))
+                    except:
+                        pass
                     return
 
                 active_games[channel_id] = {
                     "answer": answer,
                     "starter_id": message.author.id,
                     "domain": domain,
-                    "hints": [h1, h2, h3]
+                    "hints": [h1, h2, h3],
+                    "message_count": 0,      # 初始化計數
+                    "resend_threshold": 10   # 每 10 訊息重發
                 }
 
-                # DM 出題者確認
                 try:
-                    await message.author.send(embed=red_embed(f"✅ 題目提案成功！\n答案：{answer}\n領域：{domain}"))
-                except discord.Forbidden:
-                    # 若用戶關閉 DM，忽略
+                    await message.author.send(embed=red_embed(f"✅ 題目已設定！答案：{answer}"))
+                except:
                     pass
 
-                # 公開發謎題
                 view = HintView(starter_id=message.author.id, hints=[h1, h2, h3])
                 await message.channel.send(
                     embed=red_embed(f"🧠 關於「{domain}」的謎題已開始！大家快猜～"),
                     view=view
                 )
             else:
-                await message.author.send(embed=red_embed("⚠️ 每部分都唔可以留空！"))
+                try:
+                    await message.author.send(embed=red_embed("⚠️ 每部分都唔可以留空！"))
+                except:
+                    pass
         else:
-            await message.author.send(
-                embed=red_embed("⚠️ 格式錯誤！請用：\n`@ANS 答案,相關領域,提示一,提示二,提示三`")
-            )
+            try:
+                await message.author.send(embed=red_embed("⚠️ 格式錯誤！請用：@ANS 答案,領域,提1,提2,提3"))
+            except:
+                pass
         return
 
     # === 答題判定 ===
@@ -160,6 +168,17 @@ async def on_message(message):
                 embed=red_embed(f"🎉 恭喜 {message.author.mention} 答對！答案係 **{game['answer']}**！")
             )
             del active_games[channel_id]
+            return
+
+        # === 自動重發按鈕邏輯 ===
+        game["message_count"] += 1
+        if game["message_count"] >= game["resend_threshold"]:
+            game["message_count"] = 0  # 重置計數
+            view = HintView(starter_id=game["starter_id"], hints=game["hints"])
+            await message.channel.send(
+                embed=red_embed(f"🔁 謎題重發（每 {game['resend_threshold']} 訊息）\n🧠 關於「{game['domain']}」的謎題！大家繼續猜～"),
+                view=view
+            )
         return
 
 # === 啟動 ===
