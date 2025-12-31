@@ -1,18 +1,3 @@
-# ===== HTTP 伺服器（保持 Replit 喚醒）=====
-from flask import Flask
-import threading
-
-app = Flask("")
-
-@app.route("/")
-def home():
-    return "✅ hk-shek-fook-bot is running!"
-
-def run_flask():
-    app.run(host="0.0.0.0", port=8080)
-
-threading.Thread(target=run_flask).start()
-# ===== HTTP 伺服器結束 =====
 
 import discord
 import os
