@@ -28,17 +28,29 @@ class HintView(View):
             return False
         return True
 
+    # === 新增：是 / 否 按鈕 ===
+    @discord.ui.button(label="是", style=discord.ButtonStyle.green)
+    async def yes_btn(self, interaction: discord.Interaction, button):
+        await interaction.response.defer()
+        await interaction.channel.send(embed=red_embed("是"))
+
+    @discord.ui.button(label="否", style=discord.ButtonStyle.red)
+    async def no_btn(self, interaction: discord.Interaction, button):
+        await interaction.response.defer()
+        await interaction.channel.send(embed=red_embed("否"))
+
+    # === 原有按鈕 ===
     @discord.ui.button(label="接近了", style=discord.ButtonStyle.blurple)
     async def close_enough(self, interaction: discord.Interaction, button):
         await interaction.response.defer()
         await interaction.channel.send(embed=red_embed("接近了"))
 
-    @discord.ui.button(label="沒有關係", style=discord.ButtonStyle.red)
+    @discord.ui.button(label="沒有關係", style=discord.ButtonStyle.grey)
     async def not_related(self, interaction: discord.Interaction, button):
         await interaction.response.defer()
         await interaction.channel.send(embed=red_embed("沒有關係～"))
 
-    @discord.ui.button(label="再猜猜", style=discord.ButtonStyle.green)
+    @discord.ui.button(label="再猜猜", style=discord.ButtonStyle.grey)
     async def guess_again(self, interaction: discord.Interaction, button):
         await interaction.response.defer()
         await interaction.channel.send(embed=red_embed("再猜猜！"))
@@ -58,6 +70,7 @@ class HintView(View):
         await interaction.response.defer()
         await interaction.channel.send(embed=red_embed(f"提示係 {self.hints[2]}"))
 
+# =============== 以下為完整主邏輯（與之前相同）===============
 @bot.event
 async def on_ready():
     print(f"✅ {bot.user} 已上線！")
@@ -71,23 +84,19 @@ async def on_message(message):
 
     # === 1. 在文字頻道中 ===
     if isinstance(message.channel, discord.TextChannel):
-        # 喚醒指令
         if content == "@射你老母":
             allowed_channels.add(message.channel.id)
             await message.channel.send(embed=red_embed("🧟 Bot 已喚醒！可用 DM 出題或在此頻道出題。"))
             return
 
-        # 檢查頻道是否允許
         if message.channel.id not in allowed_channels:
             return
 
-        # 查分
         if content == "@mark":
             pts = scores[message.author.id]
             await message.channel.send(embed=red_embed(f"你有 {pts} 分。"))
             return
 
-        # 頻道內出題
         if content.startswith("@ANS "):
             parts = content[5:].split(",", 4)
             if len(parts) == 5:
@@ -100,7 +109,7 @@ async def on_message(message):
                         "answer": answer,
                         "starter_id": message.author.id,
                         "domain": domain,
-                        "hints": [h1, h2, h3]
+                        "hints": [h1, h2, h3]  # hints[0]=h1, hints[1]=h2, hints[2]=h3
                     }
                     await message.author.send(embed=red_embed(f"✅ 謎題已設定！答案：{answer}"))
                     view = HintView(starter_id=message.author.id, hints=[h1, h2, h3])
@@ -116,7 +125,6 @@ async def on_message(message):
                 )
             return
 
-        # 答題判定
         if message.channel.id in active_games:
             game = active_games[message.channel.id]
             if content == game["answer"]:
@@ -172,16 +180,14 @@ async def on_message(message):
                 await message.author.send(
                     embed=red_embed(
                         "💡 DM 出題格式：\n"
-                        "`@ANS 頻道ID,答案,相關領域,提示一,提示二,提示三`\n"
-                        "（例如：@ANS 123456789012345678,港珠澳大橋,基建,連接三地,世界最長跨海橋,2018年通車）"
+                        "`@ANS 頻道ID,答案,相關領域,提示一,提示二,提示三`"
                     )
                 )
         else:
             await message.author.send(embed=red_embed("❌ 私訊只支援出題指令 `@ANS ...`"))
 
-# === 啟動 ===
 if __name__ == "__main__":
     if not DISCORD_TOKEN:
-        print("❌ 請設定環境變數 DISCORD_BOT_TOKEN")
+        print("❌ 請設定 DISCORD_BOT_TOKEN")
     else:
         bot.run(DISCORD_TOKEN)
