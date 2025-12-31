@@ -1,3 +1,8 @@
+# ===== 禁用 Discord 語音模組（解決 audioop 錯誤）=====
+import sys
+sys.modules['discord.voice_client'] = type(sys)('discord.voice_client')
+sys.modules['discord.player'] = type(sys)('discord.player')
+# ===== 禁用完成 =====
 
 import discord
 import os
@@ -180,6 +185,8 @@ async def on_message(message):
 # === 啟動 Bot ===
 if __name__ == "__main__":
     if not DISCORD_TOKEN:
-        print("❌ 請設定 Secrets: DISCORD_BOT_TOKEN")
+        print("❌ 請設定 Render 的 Environment Variables: DISCORD_BOT_TOKEN")
+        exit(1)
     else:
+        print("🚀 正在連接 Discord...")
         bot.run(DISCORD_TOKEN)
