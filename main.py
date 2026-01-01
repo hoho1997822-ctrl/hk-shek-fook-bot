@@ -1,19 +1,18 @@
-# ===== 禁用 Discord 語音模組（解決 audioop 錯誤）=====
-import sys
-sys.modules['discord.voice_client'] = type(sys)('discord.voice_client')
-sys.modules['discord.player'] = type(sys)('discord.player')
-# ===== 禁用完成 =====
+# ===== HTTP 伺服器（保持 Replit 喚醒）=====
+from flask import Flask
+import threading
 
-# 建立假的 voice_client 模組
-fake_voice_client = ModuleType('discord.voice_client')
-fake_voice_client.VoiceClient = None
-fake_voice_client.VoiceProtocol = None
-sys.modules['discord.voice_client'] = fake_voice_client
+app = Flask("")
 
-# 建立假的 player 模組（可選，但建議）
-fake_player = ModuleType('discord.player')
-sys.modules['discord.player'] = fake_player
-# ===== 禁用完成 =====
+@app.route("/")
+def home():
+    return "✅ hk-shek-fook-bot is running!"
+
+def run_flask():
+    app.run(host="0.0.0.0", port=5000)  # Replit 強制用 5000
+
+threading.Thread(target=run_flask, daemon=True).start()
+# ===== HTTP 伺服器結束 =====
 
 import discord
 import os
@@ -126,7 +125,8 @@ async def on_message(message):
     if content.startswith("@ANS "):
         try:
             await message.delete()
-        except:
+        except discord.Forbidden:
+            # 無「管理訊息」權限時，忽略刪除
             pass
 
         parts = content[5:].split(",", 4)
@@ -182,7 +182,6 @@ async def on_message(message):
             del active_games[channel_id]
             return
 
-        # 每 10 條訊息重發
         game["message_count"] += 1
         if game["message_count"] >= game["resend_threshold"]:
             game["message_count"] = 0
@@ -196,8 +195,6 @@ async def on_message(message):
 # === 啟動 Bot ===
 if __name__ == "__main__":
     if not DISCORD_TOKEN:
-        print("❌ 請設定 Render 的 Environment Variables: DISCORD_BOT_TOKEN")
-        exit(1)
+        print("❌ 請在 Replit 的 Tools → Secrets 設定 DISCORD_BOT_TOKEN")
     else:
-        print("🚀 正在連接 Discord...")
         bot.run(DISCORD_TOKEN)
